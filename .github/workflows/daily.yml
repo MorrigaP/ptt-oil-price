@@ -2,9 +2,8 @@ name: Daily Oil Price Fetch
 
 on:
   schedule:
-    # 18:00 เวลาไทย = 11:00 UTC (ไทย UTC+7)
-    - cron: "0 15 * * *"
-  workflow_dispatch:   # ให้กดรันเองได้ด้วย (สำหรับ test)
+    - cron: "0 0 * * *"
+  workflow_dispatch:   # test
 
 permissions:
   contents: write      # ให้ commit กลับ repo ได้
