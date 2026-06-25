@@ -2,7 +2,7 @@ name: Daily Oil Price Fetch
 
 on:
   schedule:
-    - cron: "0 23 * * *"
+    - cron: "0 00 * * *"
   workflow_dispatch:   # test
 
 permissions:
