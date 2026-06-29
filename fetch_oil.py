@@ -3,40 +3,57 @@ import csv
 import os
 from datetime import datetime, timezone, timedelta
 
-# ===== ดึงราคาน้ำมันจาก Thai Oil API (REST/JSON) =====
-API_URL = "https://api.chnwt.dev/thai-oil-api/latest"   # <-- เพิ่ม /latest
+API_URL = "https://api.chnwt.dev/thai-oil-api/latest"
+
+# ===== Map จากชื่อไทย -> รหัส fuel_type มาตรฐานของเราเอง =====
+# (เพราะชื่อไทย+ราคามาเป็นคู่กันเสมอ ส่วน key อังกฤษจาก API ไม่น่าเชื่อถือ)
+NAME_TO_FUEL_TYPE = {
+    "เบนซิน 95": "gasoline_95",
+    "แก๊สโซฮอล์ 95": "gasohol_95",
+    "แก๊สโซฮอล์ 91": "gasohol_91",
+    "แก๊สโซฮอล์ E20": "gasohol_e20",
+    "แก๊สโซฮอล์ E85": "gasohol_e85",
+    "ดีเซล": "diesel",
+    "ดีเซล B7": "diesel_b7",
+    "ดีเซล B20": "diesel_b20",
+    "ดีเซลพรีเมียม": "premium_diesel",
+    "ซูเปอร์พาวเวอร์ แก๊สโซฮอล์ 95": "superpower_gasohol_95",
+    "แก๊ส NGV": "ngv",
+}
 
 resp = requests.get(API_URL, timeout=30)
 resp.raise_for_status()
 data = resp.json()
 
-# เช็คว่าได้โครงสร้างที่ถูกต้อง
 if not isinstance(data.get("response"), dict):
     print(f"ERROR: unexpected response: {resp.text[:500]}")
     raise ValueError("API response structure changed")
 
-# วันที่ดึงข้อมูล (เวลาไทย UTC+7)
 capture_date = datetime.now(timezone(timedelta(hours=7))).strftime("%Y-%m-%d")
-
-# วันที่ที่ API ระบุ (ภาษาไทย พ.ศ.)
 price_date_th = data["response"]["date"]
-
-# ราคาน้ำมัน PTT แยกตามประเภท
 ptt = data["response"]["stations"]["ptt"]
 
-# ===== แตกเป็นแถว: หนึ่งประเภทน้ำมัน = หนึ่งแถว =====
 rows = []
-for fuel_type, info in ptt.items():
+for original_key, info in ptt.items():
+    name_th = info["name"]
+    price = info["price"]
+
+    # ใช้ name (ไทย) เป็นตัวตั้งหา fuel_type มาตรฐาน ไม่เชื่อ key จาก API
+    fuel_type = NAME_TO_FUEL_TYPE.get(name_th)
+
+    if fuel_type is None:
+        print(f"⚠️ UNKNOWN name '{name_th}' (original key: '{original_key}') — please add to NAME_TO_FUEL_TYPE")
+        fuel_type = f"unknown_{original_key}"  # กันตกหาย แต่ flag ไว้ให้เห็น
+
     rows.append({
         "capture_date": capture_date,
         "price_date_th": price_date_th,
         "company": "PTT",
         "fuel_type": fuel_type,
-        "fuel_name_th": info["name"],
-        "price": info["price"],
+        "fuel_name_th": name_th,
+        "price": price,
     })
 
-# ===== เขียนลง CSV (append สะสมทุกวัน) =====
 csv_path = "oil_prices.csv"
 file_exists = os.path.exists(csv_path)
 fieldnames = ["capture_date", "price_date_th", "company", "fuel_type", "fuel_name_th", "price"]
@@ -49,4 +66,4 @@ with open(csv_path, "a", newline="", encoding="utf-8-sig") as f:
 
 print(f"Wrote {len(rows)} rows for {capture_date} (price date: {price_date_th})")
 for r in rows:
-    print(f"  {r['fuel_type']}: {r['price']}")
+    print(f"  {r['fuel_type']}: {r['fuel_name_th']} = {r['price']}")
