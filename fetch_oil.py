@@ -14,7 +14,7 @@ NAME_TO_FUEL_TYPE = {
     "แก๊สโซฮอล์ E20": "gasohol_e20",
     "แก๊สโซฮอล์ E85": "gasohol_e85",
     "ดีเซล": "diesel",
-    "ดีเซล B7": "diesel_b7",
+    "ดีเซล B7": "diesel",        
     "ดีเซล B20": "diesel_b20",
     "ดีเซลพรีเมียม": "premium_diesel",
     "ซูเปอร์พาวเวอร์ แก๊สโซฮอล์ 95": "superpower_gasohol_95",
