@@ -1,100 +1,58 @@
 import requests
-from bs4 import BeautifulSoup
 import csv
 import os
 from datetime import datetime, timezone, timedelta
 
-URL = "https://oilprice.ryangl.com/en/"
+API_URL = "https://api.chnwt.dev/thai-oil-api/latest"
 
+# ===== Map จากชื่อไทย -> รหัส fuel_type มาตรฐานของเราเอง =====
+# (เพราะชื่อไทย+ราคามาเป็นคู่กันเสมอ ส่วน key อังกฤษจาก API ไม่น่าเชื่อถือ)
 NAME_TO_FUEL_TYPE = {
-    "Diesel B20": "diesel_b20",
-    "Diesel": "diesel",
-    "Gasohol E20": "gasohol_e20",
-    "Gasohol 91": "gasohol_91",
-    "Gasohol 95": "gasohol_95",
-    "Gasoline 95": "gasoline_95",
-    "Premium Diesel": "premium_diesel",
-    "Super Power GSH95": "superpower_gasohol_95",
+    "เบนซิน 95": "gasoline_95",
+    "แก๊สโซฮอล์ 95": "gasohol_95",
+    "แก๊สโซฮอล์ 91": "gasohol_91",
+    "แก๊สโซฮอล์ E20": "gasohol_e20",
+    "แก๊สโซฮอล์ E85": "gasohol_e85",
+    "ดีเซล": "diesel",
+    "ดีเซล B7": "diesel",        
+    "ดีเซล B20": "diesel_b20",
+    "ดีเซลพรีเมียม": "premium_diesel",
+    "ซูเปอร์พาวเวอร์ แก๊สโซฮอล์ 95": "superpower_gasohol_95",
+    "แก๊ส NGV": "ngv",
 }
 
-# ===== แปลงวันที่เป็นภาษาไทย พ.ศ. (ให้ตรงกับข้อมูลเก่า) =====
-THAI_MONTHS = {
-    1: "มกราคม", 2: "กุมภาพันธ์", 3: "มีนาคม", 4: "เมษายน",
-    5: "พฤษภาคม", 6: "มิถุนายน", 7: "กรกฎาคม", 8: "สิงหาคม",
-    9: "กันยายน", 10: "ตุลาคม", 11: "พฤศจิกายน", 12: "ธันวาคม",
-}
-
-def to_thai_date(dt):
-    """แปลง datetime -> '7 กรกฎาคม 2569' (พ.ศ.)"""
-    day = dt.day
-    month_th = THAI_MONTHS[dt.month]
-    year_be = dt.year + 543  # ค.ศ. -> พ.ศ.
-    return f"{day} {month_th} {year_be}"
-
-resp = requests.get(URL, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+resp = requests.get(API_URL, timeout=30)
 resp.raise_for_status()
+data = resp.json()
 
-soup = BeautifulSoup(resp.text, "html.parser")
+if not isinstance(data.get("response"), dict):
+    print(f"ERROR: unexpected response: {resp.text[:500]}")
+    raise ValueError("API response structure changed")
 
-# วันที่ปัจจุบัน (เวลาไทย)
-now_th = datetime.now(timezone(timedelta(hours=7)))
-capture_date = now_th.strftime("%Y-%m-%d")
-price_date_th = to_thai_date(now_th)   # ← format ไทย พ.ศ. เหมือนข้อมูลเก่า
+capture_date = datetime.now(timezone(timedelta(hours=7))).strftime("%Y-%m-%d")
+price_date_th = data["response"]["date"]
+ptt = data["response"]["stations"]["ptt"]
 
 rows = []
-warnings = []
+for original_key, info in ptt.items():
+    name_th = info["name"]
+    price = info["price"]
 
-table = soup.find("table")
-if table is None:
-    raise ValueError("ERROR: ไม่พบ table ในหน้าเว็บ - โครงสร้างอาจเปลี่ยน")
+    # ใช้ name (ไทย) เป็นตัวตั้งหา fuel_type มาตรฐาน ไม่เชื่อ key จาก API
+    fuel_type = NAME_TO_FUEL_TYPE.get(name_th)
 
-for tr in table.find_all("tr")[1:]:
-    cells = tr.find_all("td")
-    if len(cells) < 2:
-        continue
-
-    fuel_cell = cells[0].get_text(strip=True)
-    price_today = cells[1].get_text(strip=True)
-
-    matched_type = None
-    matched_en = None
-    for en_name, ftype in NAME_TO_FUEL_TYPE.items():
-        if fuel_cell.startswith(en_name):
-            matched_type = ftype
-            matched_en = en_name
-            break
-
-    if matched_type is None:
-        warnings.append(f"⚠️ UNKNOWN fuel: '{fuel_cell}'")
-        matched_type = "unknown"
-        matched_en = fuel_cell
-
-    name_th = fuel_cell.replace(matched_en, "").strip() if matched_en else fuel_cell
-
-    try:
-        price_val = float(price_today)
-    except ValueError:
-        warnings.append(f"⚠️ INVALID price for '{fuel_cell}': '{price_today}' - skipped")
-        continue
+    if fuel_type is None:
+        print(f"⚠️ UNKNOWN name '{name_th}' (original key: '{original_key}') — please add to NAME_TO_FUEL_TYPE")
+        fuel_type = f"unknown_{original_key}"  # กันตกหาย แต่ flag ไว้ให้เห็น
 
     rows.append({
         "capture_date": capture_date,
-        "price_date_th": price_date_th,   # ← ใช้ format ไทยแล้ว
+        "price_date_th": price_date_th,
         "company": "PTT",
-        "fuel_type": matched_type,
+        "fuel_type": fuel_type,
         "fuel_name_th": name_th,
-        "price": price_today,
+        "price": price,
     })
-
-if warnings:
-    print("=" * 50)
-    print("DATA QUALITY WARNINGS:")
-    for w in warnings:
-        print(w)
-    print("=" * 50)
-
-if len(rows) < 5:
-    raise ValueError(f"ERROR: ได้แค่ {len(rows)} แถว - หยุดไม่เขียน CSV")
 
 csv_path = "oil_prices.csv"
 file_exists = os.path.exists(csv_path)
@@ -106,6 +64,6 @@ with open(csv_path, "a", newline="", encoding="utf-8-sig") as f:
         writer.writeheader()
     writer.writerows(rows)
 
-print(f"Wrote {len(rows)} rows for {capture_date} ({price_date_th})")
+print(f"Wrote {len(rows)} rows for {capture_date} (price date: {price_date_th})")
 for r in rows:
     print(f"  {r['fuel_type']}: {r['fuel_name_th']} = {r['price']}")
